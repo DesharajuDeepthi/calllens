@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  # ── MCP server — long-running container Claude Desktop exec's into ──────────
+  mcp:
+    build: .
+    image: transcript-intelligence:latest
+    container_name: transcript-intelligence   # fixed name for run_mcp.sh
+    environment:
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./mcp_server:/app/mcp_server          # live-mount so edits take effect
+      - ./scripts:/app/scripts
+      - /Users/deepthidesharaju/Documents/AI engineer interview takehome/interview-assignment/dataset:/app/data/dataset:ro
+      - ./outputs:/app/outputs
+    command: sleep infinity                    # stays alive; Claude Desktop exec's the server process in
+
+  # ── Analytics pipeline ──────────────────────────────────────────────────────
+  pipeline:
+    build: .
+    image: transcript-intelligence:latest
+    env_file:
+      - .env
+    volumes:
+      # Live-mount source so edits outside Docker are reflected immediately
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./notebooks:/app/notebooks
+      # Dataset (read-only) — absolute path to the real dataset on the host
+      - /Users/deepthidesharaju/Documents/AI engineer interview takehome/interview-assignment/dataset:/app/data/dataset:ro
+      # Outputs (writable)
+      - ./outputs:/app/outputs
+    # Run the full pipeline end-to-end
+    command: >
+      bash -c "
+        python -m src.loader &&
+        python -m src.categorize &&
+        python -m src.sentiment &&
+        python -m src.churn_scorer &&
+        python -m src.action_tracker &&
+        python -m src.topic_analyzer
+      "
+
+  jupyter:
+    build: .
+    image: transcript-intelligence:latest
+    env_file:
+      - .env
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./src:/app/src
+      - ./notebooks:/app/notebooks
+      - /Users/deepthidesharaju/Documents/AI engineer interview takehome/interview-assignment/dataset:/app/data/dataset:ro
+      - ./outputs:/app/outputs
+    command: >
+      jupyter notebook
+        --ip=0.0.0.0
+        --port=8888
+        --no-browser
+        --allow-root
+        --notebook-dir=/app/notebooks
+
+  test:
+    build: .
+    image: transcript-intelligence:latest
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - /Users/deepthidesharaju/Documents/AI engineer interview takehome/interview-assignment/dataset:/app/data/dataset:ro
+    command: pytest tests/ -v
