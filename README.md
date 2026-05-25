@@ -54,6 +54,35 @@ docker compose run --rm test
 pytest tests/ -v
 ```
 
+### Run the MCP Server (Claude Desktop integration)
+
+```bash
+# 1. Start the MCP container
+docker-compose up -d mcp
+
+# 2. Add to Claude Desktop config at:
+# ~/Library/Application Support/Claude/claude_desktop_config.json
+{
+  "mcpServers": {
+    "transcript-intelligence": {
+      "command": "/usr/local/bin/docker",
+      "args": ["exec", "-i", "transcript-intelligence", "python", "-m", "mcp_server.server"]
+    }
+  }
+}
+
+# 3. Restart Claude Desktop — look for the hammer icon
+```
+
+**Available MCP tools:**
+| Tool | Description |
+|------|-------------|
+| `score_churn_risk` | Rank accounts by churn risk score |
+| `search_meetings` | Keyword search across all 100 meetings |
+| `get_sentiment_trends` | Sentiment by call type, sub-theme, or week |
+| `find_recurring_topics` | Topics appearing in 3+ meetings |
+| `get_action_items` | Filter action items by owner or keyword |
+
 ---
 
 ## What Gets Generated
