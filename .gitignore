@@ -16,7 +16,7 @@ build/
 notebooks/.ipynb_checkpoints/
 
 # Data (large dataset — not committed)
-data/dataset/
+#data/dataset/
 
 # Node
 slides/node_modules/
