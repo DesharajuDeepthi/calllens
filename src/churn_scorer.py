@@ -136,12 +136,49 @@ def _recent_negativity_score(meetings: pd.DataFrame) -> float:
     return 0.0
 
 
+def _transcript_score(meetings: pd.DataFrame) -> float:
+    """
+    Transcript-derived signal (when src.transcript_sentiment features are present):
+    customer-specific late-call negativity and meetings that end on a negative pivot.
+    Returns 0 if the transcript features have not been added.
+    """
+    if "late_customer_sentiment" not in meetings.columns:
+        return 0.0
+    points = 0.0
+
+    if "has_negative_pivot" in meetings.columns:
+        points += min(int(meetings["has_negative_pivot"].fillna(False).sum()) * 5, 10)
+
+    late_cust = meetings["late_customer_sentiment"].dropna()
+    if not late_cust.empty:
+        worst = float(late_cust.min())
+        if worst < 2.5:
+            points += 10
+        elif worst < 3.0:
+            points += 5
+
+    return min(points, 20)
+
+
+def _trajectory_score(trajectory: dict | None) -> float:
+    """Cross-meeting trajectory signal: a sustained decline adds risk."""
+    if not trajectory:
+        return 0.0
+    return {"declining": 10.0, "volatile": 5.0}.get(trajectory.get("label"), 0.0)
+
+
 # ============================================================================
 # Main scoring function
 # ============================================================================
 
-def score_account(df: pd.DataFrame, account: str) -> dict[str, Any]:
-    """Score a single account for churn risk."""
+def score_account(df: pd.DataFrame, account: str,
+                  trajectory: dict | None = None) -> dict[str, Any]:
+    """
+    Score a single account for churn risk.
+
+    `trajectory` is an optional cross-meeting trajectory dict
+    (src.account_journey) — a declining arc adds risk.
+    """
     account_meetings = df[df["account"] == account].copy()
 
     if len(account_meetings) == 0:
@@ -159,7 +196,9 @@ def score_account(df: pd.DataFrame, account: str) -> dict[str, Any]:
     sent_pts = _sentiment_score_component(account_meetings)
     concern_pts = _concern_score(account_meetings)
     recent_pts = _recent_negativity_score(account_meetings)
-    total = churn_pts + sent_pts + concern_pts + recent_pts
+    transcript_pts = _transcript_score(account_meetings)
+    trajectory_pts = _trajectory_score(trajectory)
+    total = min(churn_pts + sent_pts + concern_pts + recent_pts + transcript_pts + trajectory_pts, 100)
 
     if total >= 70:
         risk_level = "Critical"
@@ -205,14 +244,22 @@ def score_account(df: pd.DataFrame, account: str) -> dict[str, Any]:
             "sentiment": sent_pts,
             "concerns": concern_pts,
             "recent_negativity": recent_pts,
+            "transcript_negativity": transcript_pts,
+            "trajectory": trajectory_pts,
         },
         "evidence": evidence,
         "recommendation": recommendation,
     }
 
 
-def score_all_accounts(df: pd.DataFrame, min_meetings: int = 1) -> list[dict]:
-    """Score every customer account in the dataset, sorted by risk descending."""
+def score_all_accounts(df: pd.DataFrame, min_meetings: int = 1,
+                       journeys: list[dict] | None = None) -> list[dict]:
+    """
+    Score every customer account in the dataset, sorted by risk descending.
+
+    If `journeys` (from src.account_journey.build_all_journeys) is supplied, each
+    account's cross-meeting trajectory feeds its risk score.
+    """
     if "account" not in df.columns:
         df = add_account_column(df)
 
@@ -221,11 +268,16 @@ def score_all_accounts(df: pd.DataFrame, min_meetings: int = 1) -> list[dict]:
 
     print(f"🔍 Scoring {len(accounts)} accounts for churn risk...")
 
+    trajectories = {}
+    if journeys:
+        from src.account_journey import trajectory_lookup
+        trajectories = trajectory_lookup(journeys)
+
     results = [
-        score_account(customer_facing, account)
+        score_account(customer_facing, account, trajectory=trajectories.get(account))
         for account in accounts
-        if score_account(customer_facing, account)["meeting_count"] >= min_meetings
     ]
+    results = [r for r in results if r["meeting_count"] >= min_meetings]
     results.sort(key=lambda x: x["risk_score"], reverse=True)
 
     OUTPUT_DIR.mkdir(exist_ok=True)

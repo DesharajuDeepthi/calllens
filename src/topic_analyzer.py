@@ -26,19 +26,78 @@ import plotly.graph_objects as go
 OUTPUT_DIR = Path("outputs")
 CHARTS_DIR = OUTPUT_DIR / "charts"
 
+import re
+
+_TOPIC_PUNCT = re.compile(r"[^\w\s]")
+
+
+def _normalize_topic(topic: str) -> frozenset:
+    """Token set for a topic: lowercased, de-punctuated, naive singularisation."""
+    cleaned = _TOPIC_PUNCT.sub(" ", (topic or "").lower())
+    tokens = {
+        (w[:-1] if len(w) > 3 and w.endswith("s") else w)
+        for w in cleaned.split()
+    }
+    return frozenset(tokens)
+
+
+def build_topic_canonical_map(topic_counts: dict[str, int], jaccard: float = 0.6) -> dict[str, str]:
+    """
+    Map near-duplicate topics to a single canonical label.
+
+    "compliance" and "compliance reporting" both roll up to the most frequent
+    of the group. Two topics merge when one token set contains the other, or
+    their Jaccard overlap is high. Deterministic: more frequent topics win.
+    """
+    norm = {t: _normalize_topic(t) for t in topic_counts}
+    ordered = sorted(topic_counts, key=lambda t: (-topic_counts[t], len(t)))
+
+    canon: dict[str, str] = {}
+    reps: list[tuple[str, frozenset]] = []
+    for t in ordered:
+        ts = norm[t]
+        match = None
+        for rep_topic, rep_ts in reps:
+            if not ts or not rep_ts:
+                continue
+            overlap = len(ts & rep_ts) / len(ts | rep_ts)
+            if ts <= rep_ts or rep_ts <= ts or overlap >= jaccard:
+                match = rep_topic
+                break
+        if match:
+            canon[t] = match
+        else:
+            canon[t] = t
+            reps.append((t, ts))
+    return canon
+
 
 # ============================================================================
 # Frequency analysis
 # ============================================================================
 
-def topic_frequency(df: pd.DataFrame, min_count: int = 3) -> dict[str, Any]:
-    """Find topics appearing in multiple meetings."""
-    topic_meetings: dict[str, list[str]] = defaultdict(list)
+def topic_frequency(df: pd.DataFrame, min_count: int = 3, canonicalize: bool = False) -> dict[str, Any]:
+    """
+    Find topics appearing in multiple meetings.
+
+    With ``canonicalize=True``, near-duplicate topics are merged (their distinct
+    meeting sets are unioned) before counting.
+    """
+    topic_meetings: dict[str, set[str]] = defaultdict(set)
 
     for _, row in df.iterrows():
         for topic in (row.get("topics") or []):
-            topic_meetings[topic].append(row["meeting_id"])
+            topic_meetings[topic].add(row["meeting_id"])
 
+    if canonicalize:
+        raw_counts = {t: len(mids) for t, mids in topic_meetings.items()}
+        cmap = build_topic_canonical_map(raw_counts)
+        merged: dict[str, set[str]] = defaultdict(set)
+        for topic, mids in topic_meetings.items():
+            merged[cmap[topic]] |= mids
+        topic_meetings = merged
+
+    topic_meetings = {t: sorted(mids) for t, mids in topic_meetings.items()}
     all_counts = {t: len(mids) for t, mids in topic_meetings.items()}
 
     recurring = sorted(

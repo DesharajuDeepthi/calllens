@@ -115,6 +115,70 @@ class TestConfidence:
 
 
 # ---------------------------------------------------------------------------
+# LLM fallback — mocked so no OpenAI key / network is required.
+# (The real API is only ever hit in the manual/notebook run; here we test the
+#  logic *around* the call: prompt -> JSON parse, fence stripping, failure path.)
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace
+
+
+def _fake_client(content=None, raise_exc=False):
+    """Minimal stand-in for the OpenAI client used by categorize_by_llm."""
+    class _Completions:
+        def create(self, **kwargs):
+            if raise_exc:
+                raise RuntimeError("simulated API failure")
+            msg = SimpleNamespace(content=content)
+            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+    return SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
+
+
+class TestLLMFallbackMocked:
+    def test_parses_plain_json(self):
+        from src.categorize import categorize_by_llm
+        client = _fake_client(
+            '{"call_type": "support", "sub_theme": "customer_support_issue", '
+            '"confidence": 0.82, "reasoning": "customer reporting a bug"}'
+        )
+        r = categorize_by_llm("Some ambiguous title", "summary", ["topic"], client)
+        assert r["call_type"] == "support"
+        assert r["method"] == "llm"
+        assert r["confidence"] == 0.82
+
+    def test_strips_code_fences(self):
+        from src.categorize import categorize_by_llm
+        client = _fake_client(
+            '```json\n{"call_type": "external", "sub_theme": "customer_renewal", '
+            '"confidence": 0.7, "reasoning": "renewal"}\n```'
+        )
+        r = categorize_by_llm("title", "summary", [], client)
+        assert r["call_type"] == "external"
+
+    def test_failure_falls_back_safely(self):
+        from src.categorize import categorize_by_llm
+        client = _fake_client(raise_exc=True)
+        r = categorize_by_llm("title", "summary", [], client)
+        assert r["call_type"] == "internal"      # safe default
+        assert r["confidence"] == 0.3            # low-confidence flag for review
+        assert r["reasoning"].startswith("LLM call failed")
+
+
+def test_review_low_confidence(capsys):
+    """The low-confidence review helper filters and prints flagged rows."""
+    import pandas as pd
+    from src.categorize import review_low_confidence
+    df = pd.DataFrame([
+        {"meeting_id": "a", "title": "Clear", "call_type": "support",
+         "sub_theme": "x", "category_confidence": 0.95, "category_reasoning": "rule"},
+        {"meeting_id": "b", "title": "Murky", "call_type": "internal",
+         "sub_theme": "other", "category_confidence": 0.3, "category_reasoning": "fallback"},
+    ])
+    low = review_low_confidence(df, threshold=0.7)
+    assert list(low["meeting_id"]) == ["b"]
+
+
+# ---------------------------------------------------------------------------
 # Account name extraction (imported via shim in categorize module)
 # ---------------------------------------------------------------------------
 
