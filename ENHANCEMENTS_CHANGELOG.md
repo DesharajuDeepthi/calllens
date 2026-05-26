@@ -7,7 +7,8 @@ from the high-level requirements down to individual code lines.
 - **Scope:** purely additive analytics + an evaluation harness + a test suite.
 - **Did NOT touch:** `notebooks/analysis.ipynb`, `mcp_server/` logic, the dataset.
 - **Everything runs offline** (no API key): all new analysis is computed from local JSON.
-- **Tests:** 100 passing, **90% coverage on `src/`** (`pytest tests/ --cov=src`).
+- **Tests:** 104 passing, **92% coverage on `src/`** (`pytest tests/ --cov=src`).
+- **No test needs an API key.** The only AI-API call (the LLM categorization fallback) is unit-tested with a **mocked** client; the real API is exercised only in the manual notebook run, which skips gracefully when no key is set.
 
 ---
 
@@ -321,7 +322,7 @@ Deleted — leftover empty scratch notebook.
 
 ```bash
 pip install -r requirements.txt
-pytest tests/ -q --cov=src --cov-report=term     # 100 passed, 90% coverage
+pytest tests/ -q --cov=src --cov-report=term     # 104 passed, 92% coverage (no API key needed)
 
 # End-to-end, offline (no API key):
 python -m src.evaluation            # 97% categorization acc; sentiment r=0.94
