@@ -37,3 +37,8 @@ mcp_server/audit.log
 slides/unpacked/
 slides/slide-*.jpg
 slides/transcript_intelligence.pdf
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/

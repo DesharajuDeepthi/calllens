@@ -96,7 +96,9 @@ docker-compose up -d mcp
 | `outputs/action_items.csv` | All extracted + parsed action items |
 | `outputs/action_items_report.json` | Owner workload + recurring themes |
 | `outputs/topic_report.json` | Recurring topics + sentiment correlation |
-| `outputs/charts/*.html` | 11 interactive Plotly charts |
+| `outputs/transcript_sentiment_report.json` | Rep-vs-customer sentiment + intra-meeting arcs |
+| `outputs/account_journeys.json` | Per-account meeting sequence + sentiment trajectory |
+| `outputs/charts/*.html` | Interactive Plotly charts |
 
 ---
 
@@ -133,6 +135,30 @@ docker-compose up -d mcp
 - Sentiment correlation: which topics drag mood down?
 - Weekly timeline of topic occurrences
 - Co-occurrence pairs (e.g., compliance + renewal appear together 11 times)
+- Optional canonicalization merges near-duplicate topics ("compliance" / "compliance reporting")
+
+**6. Transcript-Level Sentiment** (`src/transcript_sentiment.py`)
+- Mines the *per-sentence* sentiment + speaker in `transcript.json` (not just the one
+  pre-computed score). Each turn is attributed to **rep vs. customer** via email domain.
+- Rep-vs-customer gap: reps read **+0.41 pts more positive** than customers on the same calls
+  — the aggregate score masks customer frustration.
+- Intra-meeting sentiment arc + negative-pivot detection (calls actually trend *up* to a
+  positive close; frustration is front/mid-loaded, not a late pivot).
+
+**7. Account Journeys** (`src/account_journey.py`)
+- Reconstructs each account's meeting *sequence* over time and classifies the trajectory
+  (declining / improving / volatile / stable). Feeds the churn score.
+- 3 accounts show a sustained decline: Summit Trust, Brightpath Commerce, Frostbyte AI.
+
+### Evaluation (`src/evaluation.py`)
+
+Turns "looks reasonable" into numbers:
+- **Categorization:** confusion matrix + per-class precision/recall against a 34-meeting
+  hand-labelled sample → **97% accuracy, macro-F1 0.97**.
+- **Sentiment:** the pre-computed score validates against the transcript-derived score at
+  **r=0.94 (MAE 0.33, 99% within 1 pt)** — so trusting `summary.json` is a *measured* decision.
+- **Churn:** the top-10 at-risk ranking is **90% stable** under reweighting — driven by signal,
+  not by the exact (judgment-based) component weights.
 
 ---
 
@@ -158,12 +184,15 @@ docker-compose up -d mcp
 
 ```
 src/
-├── loader.py          # Loads 100 meeting dirs → flat pandas DataFrame
-├── categorize.py      # Hybrid rule + LLM categorization
-├── sentiment.py       # Sentiment aggregation, trends, charts
-├── churn_scorer.py    # Customer churn risk scoring with evidence
-├── action_tracker.py  # Action item extraction + workload + themes
-└── topic_analyzer.py  # Recurring topic detection + sentiment + timeline
+├── loader.py               # Loads 100 meeting dirs → flat DataFrame (+ per-turn transcript)
+├── categorize.py           # Hybrid rule + LLM categorization
+├── sentiment.py            # Meeting-level sentiment aggregation, trends, charts
+├── transcript_sentiment.py # Per-turn rep-vs-customer sentiment + intra-meeting arcs
+├── churn_scorer.py         # Customer churn risk scoring with evidence
+├── account_journey.py      # Cross-meeting account trajectories
+├── action_tracker.py       # Action item extraction + workload + themes
+├── topic_analyzer.py       # Recurring topic detection + sentiment + timeline
+└── evaluation.py           # Confusion matrix, sentiment validation, churn sensitivity
 ```
 
 ### Design principles
@@ -205,8 +234,13 @@ src/
 
 ## Production / Scaling Vision
 
-This is a **static analytics pipeline**. The assignment calls for different insights
-for different stakeholders — that's an **agentic system problem**, not a dashboard problem.
+The core deliverable is a **static analytics pipeline**. The assignment calls for different
+insights for different stakeholders — that's an **agentic system problem**, not a dashboard
+problem — so `mcp_server/` ships a **working prototype** of the agentic layer (5 analytics
+tools over MCP, with role-based access + an audit log) to make the vision concrete. The
+roadmap below is what hardening that prototype into production looks like. *(The RBAC `role`
+is a caller-supplied parameter — it demonstrates the access-control shape, it is not yet
+enforced identity.)*
 
 ### What this becomes in production
 
@@ -270,19 +304,22 @@ transcript-intelligence/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── data/
-│   └── dataset/              # 100 meeting folders (symlinked)
+│   └── dataset/              # 100 meeting folders (committed)
 ├── src/
 │   ├── loader.py
 │   ├── categorize.py
 │   ├── sentiment.py
+│   ├── transcript_sentiment.py
 │   ├── churn_scorer.py
+│   ├── account_journey.py
 │   ├── action_tracker.py
-│   └── topic_analyzer.py
+│   ├── topic_analyzer.py
+│   └── evaluation.py
 ├── notebooks/
 │   └── analysis.ipynb        # Main deliverable — runs end-to-end
 ├── outputs/
 │   ├── *.csv, *.json
-│   └── charts/               # 11 interactive HTML charts
+│   └── charts/               # interactive HTML charts
 └── tests/
     └── test_categorize.py
 ```

@@ -22,6 +22,12 @@ from tqdm import tqdm
 DATA_DIR = Path("data/dataset")
 OUTPUT_DIR = Path("outputs")
 
+# Per-sentence sentimentType -> numeric, aligned to the 1-5 pre-computed scale.
+SENTIMENT_VALUE = {"negative": 1.0, "neutral": 3.0, "positive": 5.0}
+
+# Columns too heavy to serialize into the flat CSV (kept in-memory only).
+_HEAVY_COLS = ["transcript_text", "transcript_turns"]
+
 
 def _load_json(filepath: Path) -> dict | list:
     """Load a JSON file, returning empty dict on failure."""
@@ -31,6 +37,59 @@ def _load_json(filepath: Path) -> dict | list:
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"⚠️  Warning: Could not load {filepath}: {e}")
         return {}
+
+
+def _speaker_role_resolver(info: dict):
+    """
+    Build a resolver that maps a speaker name to a role: 'rep', 'customer', or 'internal'.
+
+    The vendor is the organizer's email domain (e.g. aegiscloud.com). Vendor staff
+    follow a first.last@domain convention, so a speaker name normalises to an email
+    local-part we can look up. Speakers we cannot match are 'customer' when the
+    meeting spans multiple domains (a customer-facing call) and 'internal' otherwise.
+    """
+    emails = [e for e in (info.get("allEmails") or []) if "@" in e]
+    vendor_domain = (info.get("organizerEmail", "") or "").split("@")[-1].lower() or None
+    domains = {e.split("@")[1].lower() for e in emails}
+    multi_domain = len(domains) > 1
+
+    by_localpart = {e.split("@")[0].lower(): e.split("@")[1].lower() for e in emails}
+    by_lastname = {
+        e.split("@")[0].lower().split(".")[-1]: e.split("@")[1].lower()
+        for e in emails
+        if "." in e.split("@")[0]
+    }
+
+    def resolve(name: str) -> str:
+        if not name:
+            return "unknown"
+        key = name.lower().replace(" ", ".")
+        last = name.lower().split()[-1]
+        domain = by_localpart.get(key) or by_lastname.get(last)
+        if domain:
+            return "rep" if domain == vendor_domain else "customer"
+        return "customer" if multi_domain else "internal"
+
+    return resolve
+
+
+def _parse_transcript_turns(transcript_data: list, resolve_role) -> list[dict[str, Any]]:
+    """Flatten transcript sentences into typed turns with role + numeric sentiment."""
+    turns = []
+    for s in transcript_data:
+        if not isinstance(s, dict):
+            continue
+        stype = s.get("sentimentType", "neutral")
+        name = s.get("speaker_name", "")
+        turns.append({
+            "speaker_id": s.get("speaker_id"),
+            "speaker": name,
+            "role": resolve_role(name),
+            "sentiment_type": stype,
+            "sentiment_value": SENTIMENT_VALUE.get(stype, 3.0),
+            "time": s.get("time"),
+        })
+    return turns
 
 
 def _parse_meeting(meeting_dir: Path) -> dict[str, Any]:
@@ -50,6 +109,9 @@ def _parse_meeting(meeting_dir: Path) -> dict[str, Any]:
     transcript_data = transcript.get("data", []) if isinstance(transcript, dict) else []
     sentences = [s.get("sentence", "") for s in transcript_data if isinstance(s, dict)]
     full_text = " ".join(sentences)
+
+    resolve_role = _speaker_role_resolver(info)
+    turns = _parse_transcript_turns(transcript_data, resolve_role)
 
     start_time = info.get("startTime")
     end_time = info.get("endTime")
@@ -85,6 +147,7 @@ def _parse_meeting(meeting_dir: Path) -> dict[str, Any]:
         "speaker_count": len(speakers),
         "transcript_sentence_count": len(sentences),
         "transcript_text": full_text,
+        "transcript_turns": turns,
     }
 
 
@@ -120,7 +183,7 @@ def load_meetings(data_dir: Path = DATA_DIR, save_csv: bool = True) -> pd.DataFr
 
     if save_csv:
         OUTPUT_DIR.mkdir(exist_ok=True)
-        df_csv = df.copy()
+        df_csv = df.drop(columns=_HEAVY_COLS, errors="ignore").copy()
         for col in ["participants", "action_items", "topics", "key_moments",
                     "key_moment_types", "speakers"]:
             df_csv[col] = df_csv[col].apply(json.dumps)
