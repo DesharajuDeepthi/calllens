@@ -63,6 +63,8 @@ services:
         --no-browser
         --allow-root
         --notebook-dir=/app/notebooks
+        --NotebookApp.token=''
+        --NotebookApp.password=''
 
   test:
     build: .
