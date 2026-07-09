@@ -1,0 +1,181 @@
+<svg viewBox="0 0 900 580" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif" font-size="12" style="background:#0f1117">
+  <title>CallLens System Architecture</title>
+  <desc>Three-plane architecture: Ingestion, Analysis Pipeline, and MCP Serving, backed by Postgres RLS and Redis</desc>
+
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#64748b"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#4B7CF3"/>
+    </marker>
+    <marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="580" fill="#0f1117"/>
+
+  <!-- Title -->
+  <text x="450" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="#e2e8f0">CallLens — System Architecture</text>
+  <text x="450" y="44" text-anchor="middle" font-size="11" fill="#64748b">Multi-tenant · JWT/RLS · LangGraph · MCP · Eval Harness</text>
+
+  <!-- PLANE 1: INGESTION -->
+  <rect x="16" y="58" width="200" height="390" rx="8" fill="#1a1d27" stroke="#2a2d3a" stroke-width="1"/>
+  <text x="116" y="76" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8">① INGESTION PLANE</text>
+
+  <!-- PLANE 2: ANALYSIS -->
+  <rect x="232" y="58" width="238" height="390" rx="8" fill="#1a1d27" stroke="#2a2d3a" stroke-width="1"/>
+  <text x="351" y="76" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8">② ANALYSIS PLANE</text>
+
+  <!-- PLANE 3: SERVING -->
+  <rect x="486" y="58" width="222" height="390" rx="8" fill="#1a1d27" stroke="#2a2d3a" stroke-width="1"/>
+  <text x="597" y="76" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8">③ MCP SERVING PLANE</text>
+
+  <!-- CLIENTS -->
+  <rect x="724" y="58" width="160" height="390" rx="8" fill="#1a1d27" stroke="#2a2d3a" stroke-width="1"/>
+  <text x="804" y="76" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8">④ LLM CLIENTS</text>
+
+  <!-- PLANE 1 content -->
+  <rect x="30" y="90" width="172" height="46" rx="6" fill="#052e16" stroke="#10b981" stroke-width="1.5"/>
+  <text x="116" y="108" text-anchor="middle" font-size="11" font-weight="600" fill="#6ee7b7">📁 100 Call Transcripts</text>
+  <text x="116" y="122" text-anchor="middle" font-size="10" fill="#6ee7b7">JSON folders · Aegis Cloud</text>
+
+  <line x1="116" y1="136" x2="116" y2="154" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="30" y="154" width="172" height="46" rx="6" fill="#1e2433" stroke="#2a2d3a" stroke-width="1.5"/>
+  <text x="116" y="172" text-anchor="middle" font-size="11" font-weight="600" fill="#e2e8f0">Parser</text>
+  <text x="116" y="186" text-anchor="middle" font-size="10" fill="#94a3b8">SHA-256 · Pydantic validation</text>
+
+  <line x1="116" y1="200" x2="116" y2="218" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="30" y="218" width="172" height="46" rx="6" fill="#1e2433" stroke="#2a2d3a" stroke-width="1.5"/>
+  <text x="116" y="236" text-anchor="middle" font-size="11" font-weight="600" fill="#e2e8f0">Writer</text>
+  <text x="116" y="250" text-anchor="middle" font-size="10" fill="#94a3b8">Idempotent upsert · bulk hash</text>
+
+  <rect x="36" y="272" width="160" height="22" rx="4" fill="#422006" stroke="#f97316" stroke-width="1"/>
+  <text x="116" y="287" text-anchor="middle" font-size="10" fill="#fdba74">⚡ Incremental: skip unchanged</text>
+
+  <!-- PLANE 2 content -->
+  <rect x="244" y="88" width="214" height="240" rx="6" fill="#1e2433" stroke="#4B7CF3" stroke-width="1.5"/>
+  <text x="351" y="106" text-anchor="middle" font-size="11" font-weight="600" fill="#4B7CF3">LangGraph Pipeline</text>
+
+  <rect x="258" y="114" width="186" height="28" rx="4" fill="#1e3a8a" stroke="#93c5fd" stroke-width="1"/>
+  <text x="351" y="133" text-anchor="middle" font-size="10.5" fill="#bfdbfe">classify_batch · semaphore=10</text>
+
+  <line x1="351" y1="142" x2="351" y2="152" stroke="#4B7CF3" stroke-width="1.2" marker-end="url(#arr-blue)"/>
+
+  <rect x="258" y="152" width="186" height="28" rx="4" fill="#422006" stroke="#fbbf24" stroke-width="1"/>
+  <text x="351" y="171" text-anchor="middle" font-size="10.5" fill="#fde68a">🛑 HITL gate · interrupt()</text>
+
+  <line x1="351" y1="180" x2="351" y2="190" stroke="#4B7CF3" stroke-width="1.2" marker-end="url(#arr-blue)"/>
+
+  <rect x="258" y="190" width="186" height="28" rx="4" fill="#1e3a8a" stroke="#93c5fd" stroke-width="1"/>
+  <text x="351" y="209" text-anchor="middle" font-size="10.5" fill="#bfdbfe">analyze_topics · detect_risks</text>
+
+  <line x1="351" y1="218" x2="351" y2="228" stroke="#4B7CF3" stroke-width="1.2" marker-end="url(#arr-blue)"/>
+
+  <rect x="258" y="228" width="186" height="28" rx="4" fill="#422006" stroke="#fbbf24" stroke-width="1"/>
+  <text x="351" y="247" text-anchor="middle" font-size="10.5" fill="#fde68a">🛑 HITL gate · high/critical</text>
+
+  <line x1="351" y1="256" x2="351" y2="266" stroke="#4B7CF3" stroke-width="1.2" marker-end="url(#arr-blue)"/>
+
+  <rect x="258" y="266" width="186" height="28" rx="4" fill="#1e3a8a" stroke="#93c5fd" stroke-width="1"/>
+  <text x="351" y="285" text-anchor="middle" font-size="10.5" fill="#bfdbfe">write_all_insights · 4 personas</text>
+
+  <rect x="244" y="334" width="214" height="36" rx="6" fill="#2e1065" stroke="#a78bfa" stroke-width="1"/>
+  <text x="351" y="350" text-anchor="middle" font-size="10" fill="#ddd6fe">AsyncPostgresSaver</text>
+  <text x="351" y="364" text-anchor="middle" font-size="10" fill="#ddd6fe">Graph checkpoints → Redis</text>
+
+  <rect x="244" y="378" width="214" height="40" rx="6" fill="#1e2433" stroke="#2a2d3a" stroke-width="1.5"/>
+  <text x="351" y="396" text-anchor="middle" font-size="10.5" font-weight="600" fill="#e2e8f0">🤖 LLM Provider</text>
+  <text x="351" y="410" text-anchor="middle" font-size="10" fill="#94a3b8">GPT-4o-mini · Anthropic (swap)</text>
+
+  <!-- PLANE 3 content -->
+  <rect x="498" y="88" width="198" height="46" rx="6" fill="#1e2433" stroke="#2a2d3a" stroke-width="1.5"/>
+  <text x="597" y="106" text-anchor="middle" font-size="11" font-weight="600" fill="#e2e8f0">FastAPI + JWT Middleware</text>
+  <text x="597" y="120" text-anchor="middle" font-size="10" fill="#94a3b8">HS256 · claims in ContextVar</text>
+
+  <line x1="597" y1="134" x2="597" y2="150" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="498" y="150" width="198" height="168" rx="6" fill="#1e2433" stroke="#10b981" stroke-width="1.5"/>
+  <text x="597" y="168" text-anchor="middle" font-size="11" font-weight="600" fill="#10b981">MCP Tools (SSE)</text>
+
+  <rect x="508" y="176" width="178" height="20" rx="3" fill="#052e16"/>
+  <text x="597" y="190" text-anchor="middle" font-size="10" fill="#6ee7b7">get_my_insights · get_topic_trends</text>
+  <rect x="508" y="200" width="178" height="20" rx="3" fill="#052e16"/>
+  <text x="597" y="214" text-anchor="middle" font-size="10" fill="#6ee7b7">get_account_health · get_churn_risks</text>
+  <rect x="508" y="224" width="178" height="20" rx="3" fill="#052e16"/>
+  <text x="597" y="238" text-anchor="middle" font-size="10" fill="#6ee7b7">search_calls</text>
+  <rect x="508" y="248" width="178" height="20" rx="3" fill="#0c4a6e"/>
+  <text x="597" y="262" text-anchor="middle" font-size="10" fill="#7dd3fc">remember / recall / forget context</text>
+
+  <rect x="508" y="274" width="178" height="36" rx="3" fill="#431407"/>
+  <text x="597" y="288" text-anchor="middle" font-size="10" fill="#fdba74">Role-scoped: 4 personas</text>
+  <text x="597" y="302" text-anchor="middle" font-size="10" fill="#fdba74">Account RLS · field redaction</text>
+
+  <rect x="498" y="326" width="198" height="36" rx="6" fill="#2e1065" stroke="#a78bfa" stroke-width="1"/>
+  <text x="597" y="342" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ddd6fe">📊 /dashboard</text>
+  <text x="597" y="356" text-anchor="middle" font-size="10" fill="#ddd6fe">Live charts · Chart.js</text>
+
+  <rect x="498" y="370" width="198" height="36" rx="6" fill="#450a0a" stroke="#fca5a5" stroke-width="1"/>
+  <text x="597" y="386" text-anchor="middle" font-size="10.5" font-weight="600" fill="#fca5a5">🧪 Eval Harness</text>
+  <text x="597" y="400" text-anchor="middle" font-size="10" fill="#fca5a5">Classification · sentiment · LLM judge</text>
+
+  <!-- CLIENTS content -->
+  <rect x="736" y="106" width="136" height="36" rx="6" fill="#1e2433" stroke="#2a2d3a" stroke-width="1.5"/>
+  <text x="804" y="122" text-anchor="middle" font-size="11" font-weight="600" fill="#e2e8f0">Claude Desktop</text>
+  <text x="804" y="136" text-anchor="middle" font-size="10" fill="#94a3b8">MCP client</text>
+
+  <rect x="736" y="160" width="136" height="36" rx="6" fill="#1e2433" stroke="#2a2d3a" stroke-width="1.5"/>
+  <text x="804" y="176" text-anchor="middle" font-size="11" font-weight="600" fill="#e2e8f0">Codex / Copilot</text>
+  <text x="804" y="190" text-anchor="middle" font-size="10" fill="#94a3b8">MCP client</text>
+
+  <rect x="736" y="214" width="136" height="36" rx="6" fill="#1e2433" stroke="#2a2d3a" stroke-width="1.5"/>
+  <text x="804" y="230" text-anchor="middle" font-size="11" font-weight="600" fill="#e2e8f0">Any LLM client</text>
+  <text x="804" y="244" text-anchor="middle" font-size="10" fill="#94a3b8">MCP protocol</text>
+
+  <rect x="736" y="268" width="136" height="46" rx="6" fill="#431407" stroke="#f97316" stroke-width="1.5"/>
+  <text x="804" y="286" text-anchor="middle" font-size="11" font-weight="600" fill="#fdba74">JWT Token</text>
+  <text x="804" y="300" text-anchor="middle" font-size="10" fill="#fdba74">sub · role · tenant_id</text>
+  <text x="804" y="313" text-anchor="middle" font-size="10" fill="#fdba74">account_names</text>
+
+  <!-- INFRASTRUCTURE -->
+  <rect x="16" y="464" width="564" height="60" rx="8" fill="#1a1d27" stroke="#2a2d3a" stroke-width="1"/>
+  <text x="298" y="481" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8">INFRASTRUCTURE</text>
+
+  <rect x="30" y="490" width="200" height="28" rx="4" fill="#1e2433" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="130" y="509" text-anchor="middle" font-size="10.5" font-weight="600" fill="#a5b4fc">🐘 Postgres 16 + RLS</text>
+
+  <rect x="240" y="490" width="326" height="28" rx="4" fill="#1e2433" stroke="#2a2d3a" stroke-width="1"/>
+  <text x="403" y="509" text-anchor="middle" font-size="10" fill="#64748b">calls · summaries · classifications · insights · accounts · user_memories</text>
+
+  <rect x="596" y="464" width="136" height="60" rx="8" fill="#1a1d27" stroke="#ef4444" stroke-width="1"/>
+  <text x="664" y="485" text-anchor="middle" font-size="11" font-weight="600" fill="#fca5a5">Redis 7</text>
+  <text x="664" y="501" text-anchor="middle" font-size="10" fill="#94a3b8">LangGraph</text>
+  <text x="664" y="515" text-anchor="middle" font-size="10" fill="#94a3b8">checkpoints</text>
+
+  <rect x="748" y="464" width="136" height="60" rx="8" fill="#1a1d27" stroke="#8b5cf6" stroke-width="1"/>
+  <text x="816" y="485" text-anchor="middle" font-size="11" font-weight="600" fill="#c4b5fd">Observability</text>
+  <text x="816" y="501" text-anchor="middle" font-size="10" fill="#94a3b8">OTEL traces</text>
+  <text x="816" y="515" text-anchor="middle" font-size="10" fill="#94a3b8">Langfuse LLM logs</text>
+
+  <!-- Arrows between planes -->
+  <line x1="202" y1="240" x2="244" y2="240" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+  <text x="223" y="234" text-anchor="middle" font-size="9" fill="#64748b">DB</text>
+
+  <line x1="458" y1="240" x2="498" y2="240" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+  <text x="478" y="234" text-anchor="middle" font-size="9" fill="#64748b">reads</text>
+
+  <line x1="696" y1="170" x2="736" y2="130" stroke="#10b981" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <line x1="696" y1="228" x2="736" y2="178" stroke="#10b981" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <line x1="696" y1="266" x2="736" y2="232" stroke="#10b981" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <text x="724" y="208" text-anchor="middle" font-size="9" fill="#10b981" transform="rotate(-32 724 208)">SSE/MCP</text>
+
+  <line x1="736" y1="291" x2="696" y2="248" stroke="#f97316" stroke-width="1.2" stroke-dasharray="3,2" marker-end="url(#arr)"/>
+
+  <line x1="116" y1="448" x2="116" y2="464" stroke="#64748b" stroke-width="1.2" stroke-dasharray="3,2"/>
+  <line x1="351" y1="448" x2="351" y2="464" stroke="#64748b" stroke-width="1.2" stroke-dasharray="3,2"/>
+  <line x1="597" y1="418" x2="597" y2="464" stroke="#64748b" stroke-width="1.2" stroke-dasharray="3,2"/>
+</svg>
