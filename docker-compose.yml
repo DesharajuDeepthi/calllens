@@ -48,6 +48,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLASSIFIER_CONFIDENCE_THRESHOLD: ${CLASSIFIER_CONFIDENCE_THRESHOLD:-0.7}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-a-32-char-random-string}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-calllens_dev}
     volumes:
       # Mount the real transcript data read-only
       - "/Users/deepthidesharaju/Documents/Transcript Intelligence/data:/data:ro"
@@ -59,6 +62,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
 
   mcp:
@@ -86,6 +91,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-a-32-char-random-string}
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-calllens_dev}
     volumes:
       - ./src:/app/src
     depends_on:
@@ -93,7 +101,28 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"   # Neo4j Browser
+      - "7687:7687"   # Bolt protocol
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/calllens_dev}
+      NEO4J_PLUGINS: "[]"
+      NEO4J_dbms_memory_heap_initial__size: "256m"
+      NEO4J_dbms_memory_heap_max__size: "512m"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres_data:
   redis_data:
+  neo4j_data:

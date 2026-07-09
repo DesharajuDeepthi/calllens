@@ -18,19 +18,22 @@ _MEMORY_TOOLS = {"remember_context", "recall_context", "forget_context"}
 ALLOWED_TOOLS: dict[str, set[str]] = {
     "support_lead": {
         "get_my_insights", "get_topic_trends", "get_account_health", "search_calls",
+        "graph_search",
         *_MEMORY_TOOLS,
     },
     "sales_manager": {
         "get_my_insights", "get_topic_trends", "get_account_health",
-        "get_churn_risks", "search_calls",
+        "get_churn_risks", "search_calls", "graph_search",
         *_MEMORY_TOOLS,
     },
     "product_manager": {
         "get_my_insights", "get_topic_trends", "get_account_health", "search_calls",
+        "graph_search",
         *_MEMORY_TOOLS,
     },
     "eng_lead": {
         "get_my_insights", "get_topic_trends", "search_calls",
+        "graph_search",
         *_MEMORY_TOOLS,
     },
 }

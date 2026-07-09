@@ -1,6 +1,7 @@
 .PHONY: build up down db-wait ingest smoke test test-unit lint psql \
         mcp-up mcp-down mcp-logs mcp-token mcp-smoke \
-        eval eval-judge eval-reset
+        eval eval-judge eval-reset \
+        graph-up graph-build graph-browser
 
 # ── Docker lifecycle ───────────────────────────────────────────────────────
 build:
@@ -113,6 +114,23 @@ eval-judge: db-wait
 eval-reset:
 	rm -f tests/evals/baseline_metrics.json
 	@echo "Baseline cleared — next 'make eval' will save a new baseline."
+
+# ── Neo4j knowledge graph ─────────────────────────────────────────────────
+# Start Neo4j alongside Postgres + Redis
+graph-up:
+	docker compose up -d postgres redis neo4j
+	@echo "Neo4j starting at http://localhost:7474 (user: neo4j / calllens_dev)"
+
+# Build the knowledge graph from Postgres call data
+graph-build: graph-up
+	@echo "Waiting for Neo4j..."
+	@until docker compose exec neo4j neo4j status > /dev/null 2>&1; do sleep 2; done
+	docker compose run --rm --entrypoint python app scripts/build_graph.py
+	@echo "Graph ready — open http://localhost:7474 to explore"
+
+# Open Neo4j Browser directly
+graph-browser:
+	open http://localhost:7474
 
 # ── Lint (local if python available, otherwise skip) ──────────────────────
 lint:

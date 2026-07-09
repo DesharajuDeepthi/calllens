@@ -41,6 +41,7 @@ from calllens.mcp.tools import (
     recall_context_impl,
     remember_context_impl,
     search_calls_impl,
+    graph_search_impl,
 )
 
 logger = structlog.get_logger(__name__)
@@ -153,6 +154,30 @@ async def forget_context(memory_id: str) -> str:
         memory_id: The UUID of the memory to delete (from recall_context results).
     """
     return await forget_context_impl(memory_id)
+
+
+@mcp.tool()
+async def graph_search(question: str) -> str:
+    """
+    Answer relationship and pattern questions about accounts, topics, and risks
+    using the Neo4j knowledge graph.
+
+    The graph captures:
+      - Which accounts were involved in which calls
+      - Which topics were discussed in each call
+      - Which AI-generated insights are linked to which accounts
+      - Which accounts co-occur across calls sharing the same topics
+
+    Args:
+        question: A natural language question about relationships or patterns.
+
+    Examples:
+        - "Which accounts share compliance issues?"
+        - "What topics appear most in calls with negative sentiment?"
+        - "Which accounts had both outage and billing discussions?"
+        - "Which accounts are most connected to churn risk insights?"
+    """
+    return await graph_search_impl(question)
 
 
 # ── FastAPI wrapper ────────────────────────────────────────────────────────

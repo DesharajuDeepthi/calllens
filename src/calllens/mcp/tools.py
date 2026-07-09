@@ -19,6 +19,7 @@ from calllens.mcp.auth import get_claims
 from calllens.mcp.permissions import (
     can_call, redact_account_health, allowed_call_types, owns_account,
 )
+from calllens.config import settings
 
 # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -484,3 +485,75 @@ async def forget_context_impl(memory_id: str) -> str:
         "deleted": False,
         "reason": "Memory not found or does not belong to you.",
     })
+
+
+# ── Tool: graph_search ────────────────────────────────────────────────────
+
+async def graph_search_impl(question: str) -> str:
+    """
+    Answer relationship questions about accounts, topics, and risks using
+    the Neo4j knowledge graph.
+
+    Uses LangChain GraphCypherQAChain: the LLM generates a Cypher query from
+    the natural language question, runs it against Neo4j, then synthesises an
+    answer grounded in the graph results.
+
+    Examples:
+      - "Which accounts share the same compliance issues?"
+      - "What topics are most common for high-churn-risk accounts?"
+      - "Which accounts had both outage and billing topics in their calls?"
+    """
+    claims = get_claims()
+    role = claims.get("role", "")
+
+    if not can_call(role, "graph_search"):
+        return _deny("graph_search")
+
+    tenant_id = claims["tenant_id"]
+
+    # Lazy import so Neo4j libs don't slow server startup if unused
+    from langchain_community.graphs import Neo4jGraph
+    from langchain.chains import GraphCypherQAChain
+    from calllens.llm.provider import get_llm
+
+    graph = Neo4jGraph(
+        url=settings.neo4j_uri,
+        username=settings.neo4j_user,
+        password=settings.neo4j_password,
+    )
+
+    llm = get_llm(temperature=0, trace_name="graph_search")
+
+    chain = GraphCypherQAChain.from_llm(
+        llm=llm,
+        graph=graph,
+        verbose=False,
+        # Inject tenant_id into every generated query via the system prompt
+        cypher_prompt_template=(
+            "You are a Neo4j expert. Generate a Cypher query to answer the question.\n"
+            f"IMPORTANT: Always filter by tenant_id = '{tenant_id}' on Account, Call, "
+            "and Insight nodes to enforce data isolation.\n"
+            "Schema: {schema}\nQuestion: {question}\nCypher query:"
+        ),
+        return_intermediate_steps=True,
+        allow_dangerous_requests=True,
+    )
+
+    try:
+        result = chain.invoke({"query": question})
+        answer = result.get("result", "No answer found.")
+        cypher = ""
+        steps = result.get("intermediate_steps", [])
+        if steps:
+            cypher = steps[0].get("query", "")
+        return json.dumps({
+            "question": question,
+            "answer": answer,
+            "cypher_used": cypher,
+        }, indent=2)
+    except Exception as exc:
+        return json.dumps({
+            "question": question,
+            "error": str(exc),
+            "hint": "Try rephrasing or check that graph_build has been run.",
+        })

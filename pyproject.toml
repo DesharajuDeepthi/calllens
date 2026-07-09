@@ -38,8 +38,11 @@ dependencies = [
     "langchain>=0.3",
     "langchain-openai>=0.2",
     "langchain-anthropic>=0.3",
+    "langchain-community>=0.3",
     "openai>=1.30",
     "anthropic>=0.30",
+    # Neo4j knowledge graph
+    "neo4j>=5.0",
     # Utilities
     "python-dotenv>=1.0",
     "structlog>=24.1",
