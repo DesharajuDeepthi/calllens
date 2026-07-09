@@ -2,24 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps for kaleido (PNG export) — optional, skip if slow
+# System deps for asyncpg
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+    gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt pyproject.toml ./
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir "mcp>=1.0.0"
-
-# Copy source — data/ and outputs/ are mounted as volumes at runtime
+COPY pyproject.toml ./
 COPY src/ ./src/
-COPY mcp_server/ ./mcp_server/
-COPY tests/ ./tests/
-COPY notebooks/ ./notebooks/
-COPY scripts/ ./scripts/
 
-# Install the project itself as an editable package (exposes src + mcp_server)
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e ".[dev]"
 
-# Default: open a bash shell; override at docker-compose level
-CMD ["bash"]
+# Default: run the ingestion CLI
+ENTRYPOINT ["calllens-ingest"]

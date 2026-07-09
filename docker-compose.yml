@@ -1,76 +1,99 @@
-version: "3.9"
-
 services:
-  # ── MCP server — long-running container Claude Desktop exec's into ──────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: calllens
+      POSTGRES_USER: calllens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calllens_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calllens -d calllens"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: calllens
+      POSTGRES_USER: calllens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calllens_dev}
+      POSTGRES_APP_USER: calllens_app
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-calllens_app_dev}
+      REDIS_URL: redis://redis:6379/0
+      DEFAULT_TENANT_ID: "00000000-0000-0000-0000-000000000001"
+      DEFAULT_TENANT_SLUG: aegiscloud
+      TRANSCRIPT_DATA_PATH: /data/raaw
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLASSIFIER_CONFIDENCE_THRESHOLD: ${CLASSIFIER_CONFIDENCE_THRESHOLD:-0.7}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-a-32-char-random-string}
+    volumes:
+      # Mount the real transcript data read-only
+      - "/Users/deepthidesharaju/Documents/Transcript Intelligence/data:/data:ro"
+      # Mount source so code changes don't require a rebuild during dev
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   mcp:
     build: .
-    image: transcript-intelligence:latest
-    container_name: transcript-intelligence   # fixed name for run_mcp.sh
-    environment:
-      - PYTHONUNBUFFERED=1
-    env_file:
-      - .env
-    volumes:
-      - ./src:/app/src
-      - ./mcp_server:/app/mcp_server          # live-mount so edits take effect
-      - ./scripts:/app/scripts
-      - /Users/deepthidesharaju/Documents/AI engineer interview takehome/interview-assignment/dataset:/app/data/dataset:ro
-      - ./outputs:/app/outputs
-    command: sleep infinity                    # stays alive; Claude Desktop exec's the server process in
-
-  # ── Analytics pipeline ──────────────────────────────────────────────────────
-  pipeline:
-    build: .
-    image: transcript-intelligence:latest
-    env_file:
-      - .env
-    volumes:
-      # Live-mount source so edits outside Docker are reflected immediately
-      - ./src:/app/src
-      - ./tests:/app/tests
-      - ./notebooks:/app/notebooks
-      # Dataset (read-only) — absolute path to the real dataset on the host
-      - /Users/deepthidesharaju/Documents/AI engineer interview takehome/interview-assignment/dataset:/app/data/dataset:ro
-      # Outputs (writable)
-      - ./outputs:/app/outputs
-    # Run the full pipeline end-to-end
+    entrypoint: uvicorn
     command: >
-      bash -c "
-        python -m src.loader &&
-        python -m src.categorize &&
-        python -m src.sentiment &&
-        python -m src.churn_scorer &&
-        python -m src.action_tracker &&
-        python -m src.topic_analyzer
-      "
-
-  jupyter:
-    build: .
-    image: transcript-intelligence:latest
-    env_file:
-      - .env
+      calllens.mcp.server:app
+        --host 0.0.0.0
+        --port 8001
+        --reload
+        --log-level info
     ports:
-      - "8888:8888"
+      - "8001:8001"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: calllens
+      POSTGRES_USER: calllens_app
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:-calllens_app_dev}
+      POSTGRES_APP_USER: calllens_app
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-calllens_app_dev}
+      REDIS_URL: redis://redis:6379/0
+      DEFAULT_TENANT_ID: "00000000-0000-0000-0000-000000000001"
+      DEFAULT_TENANT_SLUG: aegiscloud
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-a-32-char-random-string}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
     volumes:
       - ./src:/app/src
-      - ./notebooks:/app/notebooks
-      - /Users/deepthidesharaju/Documents/AI engineer interview takehome/interview-assignment/dataset:/app/data/dataset:ro
-      - ./outputs:/app/outputs
-    command: >
-      jupyter notebook
-        --ip=0.0.0.0
-        --port=8888
-        --no-browser
-        --allow-root
-        --notebook-dir=/app/notebooks
-        --NotebookApp.token=''
-        --NotebookApp.password=''
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  test:
-    build: .
-    image: transcript-intelligence:latest
-    volumes:
-      - ./src:/app/src
-      - ./tests:/app/tests
-      - /Users/deepthidesharaju/Documents/AI engineer interview takehome/interview-assignment/dataset:/app/data/dataset:ro
-    command: pytest tests/ -v
+volumes:
+  postgres_data:
+  redis_data:
