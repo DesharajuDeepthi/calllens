@@ -250,24 +250,3 @@ MCP makes the analytics available to any LLM client without building a custom ch
 
 **Why JWT ContextVar instead of passing claims as arguments?**  
 MCP tools have fixed signatures defined by the server. Threading claims through function arguments would pollute every tool signature. ContextVar gives clean per-request scoping in async code without changing the tool interface.
-
----
-
-## About the author
-
-I build agentic AI systems that do real work in the enterprise — not demos. My focus is multi-step LLM agents, RAG pipelines, and MCP tool integrations on top of real production data.
-
-Currently at **Delta Dental** building internal tools for cybersecurity advisory and vulnerability intelligence: LangGraph agent orchestration, ChromaDB retrieval, MCP servers exposing Snowflake and Nucleus Security to LLM clients, and LangSmith + Langfuse for tracing and eval.
-
-What makes my AI work different is 10+ years in data and analytics — SQL, Snowflake, dbt, Python, AWS, Power BI. Most agentic systems fall apart at the data and retrieval layer, not the model layer. That's the part I own end to end.
-
-**Recent work:**
-- **Cyber Advisory RAG** — LangGraph agent over policies, CVE bulletins, and SOPs; reduced analyst lookup time from ~30 min to under 2 min
-- **Vulnerability Intelligence Assistant** — agentic workflow over Nucleus Security data that drafts owner-grouped risk summaries, replacing ~15 hrs/week of manual report assembly
-- **Multi-agent prototypes** — MCP servers and clients, A2A patterns, Google ADK
-
-**Stack:** LangChain · LangGraph · MCP · OpenAI · Anthropic Claude · Google Gemini · ChromaDB · FAISS · Azure AI Search · FastAPI · Docker · Python · Snowflake · dbt · AWS · RAGAS · LangSmith · Langfuse
-
-Based in the Bay Area. Open to **Agentic AI Engineer**, **GenAI Engineer**, **Applied AI Engineer**, and **AI Data Engineer** roles.
-
-[LinkedIn](https://www.linkedin.com/in/deepthidesharaju-125125103/) · desharajudeepthi@gmail.com
