@@ -1,288 +1,252 @@
-# Transcript Intelligence
+# CallLens
 
-Extracts insights from 100 B2B SaaS meeting transcripts. Categorizes meetings by
-call type, surfaces sentiment trends, identifies churn risks, tracks action items,
-and detects recurring topics across the corpus.
+**Production-grade AI engineer portfolio project.**  
+Multi-tenant B2B call analytics platform that exposes cross-call intelligence via an MCP server — so any LLM client (Claude Desktop, Codex, Copilot) can answer identity-aware questions about your customer calls.
 
-Built as a take-home assignment for an Applied AI Developer role.
-
----
-
-## Quick Start
-
-### With Docker (recommended)
-
-```bash
-# 1. Copy and fill in your API key
-cp .env.example .env
-# Edit .env: set OPENAI_API_KEY=<your key>
-
-# 2. Run the full pipeline
-docker compose run --rm pipeline
-
-# 3. Launch Jupyter to explore the notebook
-docker compose up jupyter
-# → open http://localhost:8888
-```
-
-### Without Docker (Python 3.10+)
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env  # add OPENAI_API_KEY
-
-# Run pipeline modules (from project root)
-python -m src.loader
-python -m src.categorize
-python -m src.sentiment
-python -m src.churn_scorer
-python -m src.action_tracker
-python -m src.topic_analyzer
-
-# Or open the notebook
-jupyter notebook notebooks/analysis.ipynb
-# → Cell → Run All
-```
-
-### Run tests
-
-```bash
-# With Docker
-docker compose run --rm test
-
-# Without Docker
-pytest tests/ -v
-```
-
-### Run the MCP Server (Claude Desktop integration)
-
-```bash
-# 1. Start the MCP container
-docker-compose up -d mcp
-
-# 2. Add to Claude Desktop config at:
-# ~/Library/Application Support/Claude/claude_desktop_config.json
-{
-  "mcpServers": {
-    "transcript-intelligence": {
-      "command": "/usr/local/bin/docker",
-      "args": ["exec", "-i", "transcript-intelligence", "python", "-m", "mcp_server.server"]
-    }
-  }
-}
-
-# 3. Restart Claude Desktop — look for the hammer icon
-```
-
-**Available MCP tools:**
-| Tool | Description |
-|------|-------------|
-| `score_churn_risk` | Rank accounts by churn risk score |
-| `search_meetings` | Keyword search across all 100 meetings |
-| `get_sentiment_trends` | Sentiment by call type, sub-theme, or week |
-| `find_recurring_topics` | Topics appearing in 3+ meetings |
-| `get_action_items` | Filter action items by owner or keyword |
+![Architecture](docs/architecture.svg)
 
 ---
 
-## What Gets Generated
+## What it does
 
-| File | Description |
-|------|-------------|
-| `outputs/meetings_flat.csv` | Flattened dataset (one row per meeting) |
-| `outputs/categorized.csv` | With call_type + sub_theme assigned |
-| `outputs/sentiment_report.json` | Full sentiment analysis with insights |
-| `outputs/churn_rankings.json` | Ranked at-risk accounts with evidence |
-| `outputs/action_items.csv` | All extracted + parsed action items |
-| `outputs/action_items_report.json` | Owner workload + recurring themes |
-| `outputs/topic_report.json` | Recurring topics + sentiment correlation |
-| `outputs/charts/*.html` | 11 interactive Plotly charts |
+100 real B2B SaaS call transcripts → LangGraph analysis pipeline → Postgres (with RLS) → MCP server → role-aware answers in any LLM.
+
+Ask Claude Desktop *"Which accounts are at churn risk this quarter?"* as a sales manager and get a different answer than a support lead asking the same question — same data, different framing, different authorization.
 
 ---
 
-## What This Does
+## Key engineering features
 
-### Required Tasks
-
-**1. Categorization** (`src/categorize.py`)
-- Assigns `call_type`: `support` / `external` / `internal`
-- Assigns `sub_theme`: `incident_response`, `customer_renewal`, `compliance_security`, etc.
-- Hybrid: rule-based regex (91% of cases, free) + gpt-4o-mini fallback for ambiguous titles
-- Confidence score on every result; flags low-confidence for review
-
-**2. Sentiment Analysis** (`src/sentiment.py`)
-- Aggregates pre-computed sentiment scores by call type, sub-theme, and week
-- Negative/positive outliers with evidence
-- Correlation with meeting characteristics (duration, participants, action count)
-- 4 interactive charts
-
-### Bonus Insights
-
-**3. Churn Risk Scoring** (`src/churn_scorer.py`)
-- Ranks customer accounts by churn risk (0–100 score)
-- Combines: `churn_signal` key moments + sentiment trend + concerns + recent negativity
-- Returns evidence (quoted key moments) for every score — the human reviews, the tool ranks
-
-**4. Action Item Tracker** (`src/action_tracker.py`)
-- Parses all 397 action items into: owner + verb + deadline + meeting source
-- Owner workload ranking (who is overloaded?)
-- Recurring keyword themes across meetings (systemic unresolved issues)
-
-**5. Recurring Topic Analyzer** (`src/topic_analyzer.py`)
-- 47 topics appear in 3+ meetings (on a 100-meeting corpus)
-- Sentiment correlation: which topics drag mood down?
-- Weekly timeline of topic occurrences
-- Co-occurrence pairs (e.g., compliance + renewal appear together 11 times)
-
----
-
-## Findings Summary
-
-| Dimension | Finding |
-|-----------|---------|
-| Categorization | 44% external, 29% internal, 27% support — 91% handled by rules |
-| Sentiment by type | External: 3.68 avg (most positive), Support: 2.94 avg (most negative) |
-| Sentiment trend | Flat over the Feb–Apr period (slope +0.012/week) |
-| Top sub-theme | Incident response (56 meetings) — the company has been fighting fires |
-| Churn risk | 13 Critical, 3 Alert, 6 Watch, 18 Healthy |
-| Top churn signals | Northstar Pharma, Summit Trust, Vanta Health Systems |
-| Action items | 397 total, ~4/meeting; Maria Santos most loaded (31 items) |
-| Top recurring topics | compliance (23 meetings), compliance reporting (19), renewal (17) |
-| Most sentiment-negative topics | churn risk (2.12), SLA breach (2.13), incident communication (2.16) |
+| Feature | Implementation |
+|---|---|
+| **Multi-tenancy** | Postgres Row-Level Security; `SET app.tenant_id` per connection |
+| **Identity-aware MCP** | JWT claims (role + account_names) thread through ContextVar into every tool |
+| **LangGraph pipeline** | 6-node graph with 2 HITL interrupt gates; `AsyncPostgresSaver` checkpointing |
+| **Idempotent ingestion** | SHA-256 content hash per call folder; single bulk hash query; skip-on-match |
+| **Persistent memory** | `remember_context` / `recall_context` / `forget_context` tools per JWT sub |
+| **Eval harness** | Rule-based oracle + LLM-as-judge; regression guard with baseline JSON |
+| **Observability** | OTEL tracing (FastAPI + pipeline nodes); Langfuse LLM call logging; structlog JSON |
+| **Live dashboard** | `/dashboard` — Chart.js charts pulling real-time data from Postgres |
 
 ---
 
 ## Architecture
 
-### Module structure
-
 ```
-src/
-├── loader.py          # Loads 100 meeting dirs → flat pandas DataFrame
-├── categorize.py      # Hybrid rule + LLM categorization
-├── sentiment.py       # Sentiment aggregation, trends, charts
-├── churn_scorer.py    # Customer churn risk scoring with evidence
-├── action_tracker.py  # Action item extraction + workload + themes
-└── topic_analyzer.py  # Recurring topic detection + sentiment + timeline
+┌─────────────────┐   ┌──────────────────────┐   ┌─────────────────────┐
+│  ① INGESTION    │   │   ② ANALYSIS PLANE   │   │  ③ MCP SERVING      │
+│                 │   │                      │   │                     │
+│  100 transcripts│──▶│  LangGraph pipeline  │──▶│  FastAPI + JWT      │
+│  Parser (SHA256)│   │  ├─ classify_batch   │   │  MCP Tools (SSE)    │
+│  Idempotent     │   │  ├─ 🛑 HITL gate     │   │  Role-scoped tools  │
+│  upsert         │   │  ├─ analyze_topics   │   │  Postgres RLS       │
+│                 │   │  ├─ detect_risks     │   │  /dashboard         │
+│                 │   │  ├─ 🛑 HITL gate     │   │                     │
+└─────────────────┘   │  └─ write_insights   │   └──────────┬──────────┘
+                      └──────────────────────┘              │ SSE/MCP
+                                                            ▼
+                                               Claude Desktop · Codex · Copilot
 ```
-
-### Design principles
-
-- **Tool-shaped functions:** Each insight function takes typed parameters and returns
-  a structured dict with provenance (meeting IDs). Natural foundation for MCP tools.
-- **Use pre-computed data:** `summary.json` already has summaries, topics, sentiment,
-  and tagged key moments. We aggregate these rather than regenerating — saves ~$30.
-- **Transparent over opaque:** Heuristic churn scoring with component breakdown + quoted
-  evidence beats a black-box ML model when there's no labeled training data.
-- **Cost-aware:** Total LLM spend on this project is under $1. Rules handle 91% of
-  categorization; LLM only for the remaining 9 ambiguous cases.
 
 ---
 
-## Key Decisions
+## MCP tools
 
-| Decision | Choice | Why |
-|----------|--------|-----|
-| Categorization | Hybrid (rules + LLM) | Rules are free and transparent; LLM handles semantic ambiguity |
-| LLM for categorization | gpt-4o-mini | Cheap (~$0.001/call), accurate enough for short meeting titles |
-| Sentiment | Trust pre-computed scores | Re-running = $30+ for likely similar signal; validate by sampling instead |
-| Churn scoring | Heuristic + evidence | No labeled churn data; heuristic is explainable and auditable |
-| Storage | pandas + CSV/JSON | Right tool for 100 docs; premature to add a DB |
-| Charts | Plotly HTML | Interactive; embeds in notebook; PNG fallback via kaleido |
-| Container | Docker | Reproducible across machines; no Python version surprises |
+| Tool | Roles | What it returns |
+|---|---|---|
+| `get_my_insights` | all | Persona-specific insights (support, sales, product, eng) |
+| `get_topic_trends` | all | Top topics ranked by frequency + avg sentiment |
+| `get_account_health` | all except eng_lead | Account stats; financials redacted unless sales_manager |
+| `get_churn_risks` | sales_manager only | High-risk accounts from the AI analysis |
+| `search_calls` | all | Keyword search across summaries; call types filtered by role |
+| `remember_context` | all | Save a memory keyed to your JWT sub |
+| `recall_context` | all | Retrieve your last N memories across sessions |
+| `forget_context` | all | Delete a specific memory (own only) |
+
+### Role permission matrix
+
+```
+                     get_my  topic  account  churn  search  memory
+support_lead           ✓      ✓       ✓        ✗      ✓       ✓
+sales_manager          ✓      ✓       ✓        ✓      ✓       ✓
+product_manager        ✓      ✓       ✓        ✗      ✓       ✓
+eng_lead               ✓      ✓       ✗        ✗      ✓       ✓
+```
+
+`get_account_health` additionally redacts `contract_value`, `renewal_date`, `arr`, `csm_owner` for non-sales roles.
 
 ---
 
-## Limitations
+## Observability dashboard
 
-1. **No labeled ground truth** — Categorization validated by spot-check, not a held-out test set
-2. **Heuristic churn scoring** — No actual churn outcomes; weights are based on judgment
-3. **No cross-meeting threading** — Each meeting analyzed in isolation; no customer journey view
-4. **Pre-computed dependency** — Downstream quality depends on upstream `summary.json` quality
-5. **No batch LLM calls** — Sequential; fine for 100 docs, would batch for 10k+
+Live at **`http://localhost:8001/dashboard`** when the MCP container is running.
 
----
+![CallLens Dashboard](docs/dashboard.png)
 
-## Production / Scaling Vision
+Metrics endpoint: **`GET /api/metrics`** — JSON, no auth required.
 
-This is a **static analytics pipeline**. The assignment calls for different insights
-for different stakeholders — that's an **agentic system problem**, not a dashboard problem.
-
-### What this becomes in production
-
-Each function in `src/` is shaped to become an MCP tool:
-
-```
-Stakeholder Agents (Sales | Support | Eng | PM | Exec)
-        │ MCP protocol
-        ▼
-MCP Tool Layer
-  • search_meetings(query, filters)
-  • get_sentiment_trend(call_type, time_range)
-  • score_churn_risk(account)
-  • find_action_items(owner)
-  • find_recurring_topics(min_count)
-        │
-Governance + Observability + Eval layers
-  • RBAC per tool, PII filtering, audit log
-  • Trace per query, cost tracking, Langfuse
-  • Regression tests, adversarial safety
-        │
-Data layer (this prototype)
-  100 meetings → flat DataFrame → categorized + scored
-```
-
-**Estimated buildout: ~5 weeks from this foundation**
-- Weeks 1–2: MCP tool wrappers
-- Week 3: Governance (RBAC, PII, audit log)
-- Week 4: Observability (traces, cost, latency)
-- Week 5: Role-specific agents + eval suite
-
-### Scaling at a glance
-
-| Scale | Architecture |
-|-------|-------------|
-| 100 meetings (this) | pandas + CSV + scripts |
-| 10k meetings | PostgreSQL, batch LLM calls, caching |
-| 100k+ meetings | Vector DB for semantic search, streaming pipeline, full MCP+agent |
+Charts included:
+- Sentiment distribution (donut) — 6-level taxonomy: very-negative → very-positive
+- Call type breakdown (donut) — external / support / internal
+- Top topics (horizontal bar) — ranked by call frequency
+- Insights by persona (bar) — 4 personas
+- Account health table — avg sentiment score per account with risk badges
 
 ---
 
-## Tech Stack
+## Eval harness
 
-- **Python 3.11** in Docker
-- **pandas, numpy** — Data manipulation
-- **plotly** — Interactive charts (HTML + PNG)
-- **openai** — gpt-4o-mini for LLM categorization fallback
-- **python-dotenv** — Environment management
-- **jupyter** — Notebook delivery
-- **pytest** — Lightweight validation tests
+```bash
+make eval           # accuracy + coverage gate — free, DB queries only
+make eval-judge     # LLM-as-judge quality gate — uses API credits
+make eval-reset     # clear baseline for a fresh run
+```
+
+Current baseline metrics (Aegis Cloud dataset, 100 calls):
+
+| Metric | Score | Threshold |
+|---|---|---|
+| Classification accuracy | 100% | ≥ 75% |
+| Sentiment direction accuracy | 64% | ≥ 60% |
+| Insight type coverage | 100% | 100% |
+
+The baseline is saved to `tests/evals/baseline_metrics.json` on first run. Subsequent runs fail if any metric regresses more than 5%.
 
 ---
 
-## Project Structure
+## Quick start
+
+### Prerequisites
+- Docker + Docker Compose
+- `OPENAI_API_KEY` (or Anthropic key)
+
+### 1 — Configure
+
+```bash
+cp .env.example .env
+# Edit .env: set OPENAI_API_KEY
+```
+
+### 2 — Start infrastructure
+
+```bash
+docker compose up -d postgres redis
+```
+
+### 3 — Ingest transcripts
+
+```bash
+docker compose run --rm --entrypoint calllens-ingest app
+# Output: New: 100 / Updated: 0 / Skipped: 0 / Errors: 0
+```
+
+### 4 — Run the analysis pipeline
+
+```bash
+make pipeline-run
+# Runs all 6 LangGraph nodes; pauses at HITL gates if any uncertain calls
+```
+
+### 5 — Start the MCP server
+
+```bash
+make mcp-up
+# Server at http://localhost:8001
+# Dashboard at http://localhost:8001/dashboard
+```
+
+### 6 — Generate test tokens
+
+```bash
+make mcp-token
+# Prints JWT tokens for all 4 personas
+```
+
+### 7 — Connect Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "calllens": {
+      "url": "http://localhost:8001/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer <your_sales_manager_token>"
+      }
+    }
+  }
+}
+```
+
+Then ask: *"Which accounts are at churn risk? What actions should I take this week?"*
+
+---
+
+## Project structure
 
 ```
-transcript-intelligence/
-├── README.md
-├── requirements.txt
-├── .env.example
-├── Dockerfile
-├── docker-compose.yml
-├── data/
-│   └── dataset/              # 100 meeting folders (symlinked)
-├── src/
-│   ├── loader.py
-│   ├── categorize.py
-│   ├── sentiment.py
-│   ├── churn_scorer.py
-│   ├── action_tracker.py
-│   └── topic_analyzer.py
-├── notebooks/
-│   └── analysis.ipynb        # Main deliverable — runs end-to-end
-├── outputs/
-│   ├── *.csv, *.json
-│   └── charts/               # 11 interactive HTML charts
-└── tests/
-    └── test_categorize.py
+calllens/
+├── src/calllens/
+│   ├── ingestion/        # Parser, writer, idempotent CLI
+│   ├── agents/           # LangGraph graph, nodes, prompts, state
+│   ├── mcp/              # FastMCP server, JWT auth, tools, dashboard
+│   ├── eval/             # Metrics oracle, LLM-as-judge
+│   ├── observability/    # OTEL setup, structlog
+│   └── llm/              # Provider factory with Langfuse callback
+├── tests/
+│   ├── unit/             # Parser tests
+│   ├── integration/      # DB ingestion tests
+│   └── evals/            # Accuracy gate, LLM judge, regression guard
+├── migrations/           # Postgres schema with RLS policies
+├── docs/
+│   └── architecture.svg
+└── docker-compose.yml
 ```
+
+---
+
+## Makefile reference
+
+```bash
+make up               # Start Postgres + Redis
+make ingest           # Run ingestion CLI
+make pipeline-run     # Run the full LangGraph pipeline
+make pipeline-review  # Review a specific batch BATCH_ID=...
+make mcp-up           # Start MCP server on :8001
+make mcp-token        # Generate JWT tokens for all personas
+make eval             # Run the accuracy eval suite
+make eval-judge       # Run LLM-as-judge quality eval
+make smoke            # Quick DB sanity check
+make psql             # Open Postgres shell
+```
+
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | Yes | LLM provider key |
+| `JWT_SECRET` | Yes (prod) | HS256 signing secret |
+| `LANGFUSE_PUBLIC_KEY` | No | LLM observability (cloud.langfuse.com) |
+| `LANGFUSE_SECRET_KEY` | No | LLM observability |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | OTLP endpoint (e.g. Jaeger) |
+| `LLM_PROVIDER` | No | `openai` (default) or `anthropic` |
+| `LLM_MODEL` | No | `gpt-4o-mini` (default) |
+
+---
+
+## Design decisions
+
+**Why Postgres + RLS instead of a vector DB?**  
+The 100-call dataset fits entirely in Postgres. Adding a vector DB adds ops cost without meaningful recall improvement at this scale. Semantic search can be layered on with pgvector when needed.
+
+**Why LangGraph instead of a simple loop?**  
+HITL (human-in-the-loop) interrupt gates are the hard part. LangGraph's `interrupt()` + `AsyncPostgresSaver` gives durable, resumable checkpoints — the pipeline can pause, wait for human corrections, and resume without re-running completed nodes.
+
+**Why MCP instead of a REST API?**  
+MCP makes the analytics available to any LLM client without building a custom chat UI. The role-scoped tools and RLS-enforced DB queries mean the LLM gets only what the authenticated user is allowed to see.
+
+**Why JWT ContextVar instead of passing claims as arguments?**  
+MCP tools have fixed signatures defined by the server. Threading claims through function arguments would pollute every tool signature. ContextVar gives clean per-request scoping in async code without changing the tool interface.

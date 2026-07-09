@@ -1,0 +1,7 @@
+{
+  "calls": 101,
+  "insights": 20,
+  "classification_accuracy": 1.0,
+  "sentiment_accuracy": 0.6429,
+  "insight_coverage": 1.0
+}
