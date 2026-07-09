@@ -1,0 +1,2 @@
+# Tell GitHub Linguist to ignore notebooks so Python shows as primary language
+*.ipynb linguist-detectable=false
