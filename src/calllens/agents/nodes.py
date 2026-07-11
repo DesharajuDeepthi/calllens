@@ -437,6 +437,14 @@ async def persist_insights(state: PipelineState) -> dict:
                 )
 
             for ins in state["insights"]:
+                # Filter out any malformed UUIDs the LLM may have hallucinated
+                valid_ids = []
+                for eid in (ins["evidence_call_ids"] or []):
+                    try:
+                        uuid.UUID(str(eid))
+                        valid_ids.append(str(eid))
+                    except ValueError:
+                        pass
                 await conn.execute(
                     """
                     INSERT INTO insights
@@ -451,7 +459,7 @@ async def persist_insights(state: PipelineState) -> dict:
                     ins["title"],
                     ins["body"],
                     ins["severity"],
-                    ins["evidence_call_ids"],
+                    valid_ids,
                     batch_id,
                 )
 

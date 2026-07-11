@@ -27,13 +27,15 @@ async def close_driver() -> None:
 
 # Cypher constraints + indexes — idempotent, safe to run on every startup
 _SCHEMA_STATEMENTS = [
-    "CREATE CONSTRAINT account_name IF NOT EXISTS FOR (a:Account) REQUIRE (a.tenant_id, a.name) IS NODE KEY",
+    # Community Edition: single-property uniqueness only (no composite NODE KEY)
     "CREATE CONSTRAINT call_id IF NOT EXISTS FOR (c:Call) REQUIRE c.id IS UNIQUE",
     "CREATE CONSTRAINT topic_name IF NOT EXISTS FOR (t:Topic) REQUIRE t.name IS UNIQUE",
     "CREATE CONSTRAINT insight_id IF NOT EXISTS FOR (i:Insight) REQUIRE i.id IS UNIQUE",
     "CREATE INDEX call_tenant IF NOT EXISTS FOR (c:Call) ON (c.tenant_id)",
     "CREATE INDEX account_tenant IF NOT EXISTS FOR (a:Account) ON (a.tenant_id)",
     "CREATE INDEX insight_tenant IF NOT EXISTS FOR (i:Insight) ON (i.tenant_id)",
+    # Composite index for (tenant_id, name) lookups on Account
+    "CREATE INDEX account_tenant_name IF NOT EXISTS FOR (a:Account) ON (a.tenant_id, a.name)",
 ]
 
 

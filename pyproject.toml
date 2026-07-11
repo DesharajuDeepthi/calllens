@@ -43,6 +43,7 @@ dependencies = [
     "anthropic>=0.30",
     # Neo4j knowledge graph
     "neo4j>=5.0",
+    "langchain-neo4j>=0.4",
     # Utilities
     "python-dotenv>=1.0",
     "structlog>=24.1",

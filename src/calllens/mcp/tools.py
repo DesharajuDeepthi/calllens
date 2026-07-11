@@ -511,49 +511,79 @@ async def graph_search_impl(question: str) -> str:
 
     tenant_id = claims["tenant_id"]
 
-    # Lazy import so Neo4j libs don't slow server startup if unused
-    from langchain_community.graphs import Neo4jGraph
-    from langchain.chains import GraphCypherQAChain
+    # Lazy imports
+    from neo4j import AsyncGraphDatabase
+    from langchain_core.messages import HumanMessage, SystemMessage
     from calllens.llm.provider import get_llm
 
-    graph = Neo4jGraph(
-        url=settings.neo4j_uri,
-        username=settings.neo4j_user,
-        password=settings.neo4j_password,
-    )
+    # Graph schema — provided manually to avoid APOC dependency (Community Edition)
+    GRAPH_SCHEMA = """
+Nodes:
+  (:Account  {name: str, tenant_id: str, call_count: int, avg_sentiment: float})
+  (:Call     {id: str, title: str, call_type: str, sentiment_label: str, sentiment_score: float, started_at: str, tenant_id: str})
+  (:Topic    {name: str})
+  (:Insight  {id: str, type: str, severity: str, title: str, persona: str, tenant_id: str})
 
+Relationships:
+  (:Call)-[:INVOLVES]->(:Account)         # call involves this customer account
+  (:Call)-[:COVERS]->(:Topic)             # call discusses this topic
+  (:Account)-[:HAS_INSIGHT]->(:Insight)   # account has this AI-generated insight
+  (:Account)-[:CO_OCCURS_WITH {shared_topics: int}]->(:Account)  # accounts sharing 2+ topics
+
+Useful patterns:
+  - Accounts with most shared topics: MATCH (a1)-[r:CO_OCCURS_WITH]-(a2) RETURN a1.name, a2.name, r.shared_topics ORDER BY r.shared_topics DESC
+  - Topics per account: MATCH (a:Account)<-[:INVOLVES]-(c:Call)-[:COVERS]->(t:Topic) WHERE a.tenant_id=$tid RETURN a.name, collect(DISTINCT t.name)
+  - High-severity insights: MATCH (a:Account)-[:HAS_INSIGHT]->(i:Insight) WHERE i.severity IN ['critical','high'] AND a.tenant_id=$tid RETURN a.name, i.title, i.severity
+"""
+
+    # Step 1: LLM generates Cypher from question + schema
     llm = get_llm(temperature=0, trace_name="graph_search")
+    cypher_messages = [
+        SystemMessage(content=(
+            f"You are a Neo4j Cypher expert. Generate ONE valid Cypher query to answer the question.\n"
+            f"IMPORTANT: Always filter nodes with tenant_id = '{tenant_id}' on Account, Call, and Insight nodes.\n"
+            f"Return ONLY the Cypher query, no explanation, no markdown fences.\n\n"
+            f"Schema:\n{GRAPH_SCHEMA}"
+        )),
+        HumanMessage(content=f"Question: {question}"),
+    ]
+    cypher_response = await llm.ainvoke(cypher_messages)
+    cypher = cypher_response.content.strip().strip("```").strip("cypher").strip()
 
-    chain = GraphCypherQAChain.from_llm(
-        llm=llm,
-        graph=graph,
-        verbose=False,
-        # Inject tenant_id into every generated query via the system prompt
-        cypher_prompt_template=(
-            "You are a Neo4j expert. Generate a Cypher query to answer the question.\n"
-            f"IMPORTANT: Always filter by tenant_id = '{tenant_id}' on Account, Call, "
-            "and Insight nodes to enforce data isolation.\n"
-            "Schema: {schema}\nQuestion: {question}\nCypher query:"
-        ),
-        return_intermediate_steps=True,
-        allow_dangerous_requests=True,
-    )
-
+    # Step 2: Run the Cypher against Neo4j
     try:
-        result = chain.invoke({"query": question})
-        answer = result.get("result", "No answer found.")
-        cypher = ""
-        steps = result.get("intermediate_steps", [])
-        if steps:
-            cypher = steps[0].get("query", "")
-        return json.dumps({
-            "question": question,
-            "answer": answer,
-            "cypher_used": cypher,
-        }, indent=2)
+        driver = AsyncGraphDatabase.driver(
+            settings.neo4j_uri,
+            auth=(settings.neo4j_user, settings.neo4j_password),
+        )
+        async with driver.session() as session:
+            result = await session.run(cypher)
+            records = [dict(r) async for r in result]
+        await driver.close()
     except Exception as exc:
         return json.dumps({
             "question": question,
-            "error": str(exc),
-            "hint": "Try rephrasing or check that graph_build has been run.",
+            "cypher_used": cypher,
+            "error": f"Cypher execution failed: {exc}",
+            "hint": "Try rephrasing. Run 'make graph-build' if graph is empty.",
         })
+
+    # Step 3: LLM synthesises a natural-language answer from the raw results
+    answer_messages = [
+        SystemMessage(content=(
+            "You are a helpful assistant. Given a question and raw graph query results, "
+            "write a concise, factual answer in 2-4 sentences. No preamble."
+        )),
+        HumanMessage(content=(
+            f"Question: {question}\n\n"
+            f"Graph results (first 20 rows):\n{json.dumps(records[:20], indent=2, default=str)}"
+        )),
+    ]
+    answer_response = await llm.ainvoke(answer_messages)
+
+    return json.dumps({
+        "question": question,
+        "answer": answer_response.content,
+        "cypher_used": cypher,
+        "raw_results": records[:20],
+    }, indent=2, default=str)
